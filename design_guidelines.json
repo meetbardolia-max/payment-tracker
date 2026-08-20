@@ -1,0 +1,87 @@
+{
+  "project": {
+    "name": "Sripati Processors Collection Desk",
+    "context": "Hybrid full-stack collection-management app for an Indian fabric dyeing mill",
+    "app_type": "Dashboard / operations app",
+    "theme": "Light-first with optional dark mode",
+    "emotional_tone": "Grounded, accountable, calm under pressure; textile-led rather than generic fintech",
+    "primary_success_actions": ["Import and approve dispatches", "Find the correct receivable using Serial No. and Lot No.", "Assign and complete collection work", "Record payment or promise without losing history"]
+  },
+  "discovery": {
+    "audiences": ["Owner/Admin", "Head Collection Officer", "3 Field Collection Officers", "Optional Accounts verifier"],
+    "key_tasks": ["Review imported PDF/CSV rows", "Monitor INR receivables and ageing", "Assign priority work", "Open a party/invoice and record call, visit, payment, cheque or promise", "Export auditable reports"],
+    "design_context": "High-density dashboard with drill-down operational workflows",
+    "unconventional_decision": "Use textile register language and ruled-paper/grid cues inside a modern operations desk. This breaks the generic banking dashboard pattern so mill staff recognize the source of truth immediately."
+  },
+  "research_references": [
+    {"reference": "Textile manufacturing dashboard research", "descriptors": ["Role-specific density: operators see immediate tasks, supervisors see bottlenecks, leadership sees rolled-up KPIs", "Expose stale or missing data rather than hiding data quality gaps", "React dashboards favor responsive drill-down and integrated source data"]},
+    {"reference": "SaaSFrame high-performance dashboard patterns", "descriptors": ["North Star metric occupies top-left", "Collection identity and source metadata are distinct from filters", "Explicit empty, loading, failed and permission-limited states", "Classic charts with no more than three variables"]},
+    {"reference": "2026 dark dashboard patterns", "descriptors": ["Use tinted grey rather than pure black", "Create elevation with surface lightness shifts", "One saturated accent in a restrained neutral system", "Dark-first charts require semantic, contrast-aware colors"]}
+  ],
+  "typography": {
+    "heading_font": "Work Sans",
+    "body_font": "IBM Plex Sans",
+    "numeric_font": "IBM Plex Mono",
+    "implementation": "Use CSS @import or local font loading in index.css; headings and body are not Inter. In JS use Tailwind classes such as font-sans, tracking-tight, font-[650].",
+    "scale": {"h1": "text-4xl sm:text-5xl lg:text-6xl", "h2": "text-2xl sm:text-3xl lg:text-4xl", "h3": "text-xl sm:text-2xl", "body": "text-sm md:text-base", "label": "text-xs uppercase tracking-[0.2em]"},
+    "rules": ["Headings use tight leading and tracking-tight", "Currency and identifiers use tabular/mono numerals", "Do not use huge poster headings above text-6xl", "Left-align operational copy and tables"]
+  },
+  "colors": {
+    "archetype": "Organic & Earthy with Swiss functional contrast",
+    "tokens": {"canvas": "#F5F1E8", "surface": "#FFFDF8", "surface_alt": "#EDE7DA", "ink": "#202B2A", "muted_ink": "#5E6865", "line": "#D7D0C2", "primary": "#B54832", "primary_hover": "#8E3525", "sage": "#536B5A", "due_today": "#B87918", "overdue": "#B54832", "paid": "#3E7258", "promise": "#6C5B3E", "focus": "#245D72"},
+    "rules": ["Never use #000000 or #808080", "No full-screen gradients; use flat warm surfaces and a subtle grain texture", "Primary terracotta is reserved for primary CTAs, urgent overdue accents and key actions", "All status badges include text, not color alone", "Check WCAG AA: normal text 4.5:1, large text and controls 3:1"]
+  },
+  "visual_enhancers": {
+    "texture": "Add a barely visible paper/grain overlay with opacity under 0.06; aria-hidden=true and pointer-events-none.",
+    "surface_language": "Cardless-first dashboard: 1px warm borders, compact data rows, occasional padded surfaces with rounded-md only. Use inset rule lines to echo dispatch registers.",
+    "header": "Sticky solid warm surface or bg-white/85 backdrop-blur-xl backdrop-saturate-150 with border-b; never transparent. Include brand, desktop links, role label and primary Import Dispatch CTA.",
+    "icon_style": "lucide-react, 16-20px, paired with labels; never use AI emoji characters.",
+    "scrollbar": "Customize scrollbar thumb with tinted neutral; do not reserve a gutter."
+  },
+  "component_name": {
+    "app_shell": "CollectionDeskShell",
+    "navigation": "OperationsNav",
+    "dashboard": "RoleDashboard",
+    "import": "DispatchImportReview",
+    "receivables": "ReceivablesTable",
+    "party_profile": "PartyProfileDrawer",
+    "invoice_detail": "DispatchInvoiceDetail",
+    "timeline": "CollectionTimeline",
+    "activity_form": "CollectionOutcomeForm",
+    "payment_form": "PaymentAllocationForm",
+    "assignment": "AssignmentQueue",
+    "reports": "ReportsWorkspace",
+    "audit": "AuditLogTable",
+    "toast": "Sonner"
+  },
+  "component_path": {"ui": "/app/frontend/src/components/ui/", "implementation_note": "Use .js/.jsx files, not .tsx. Reuse existing shadcn primitives: table, badge, tabs, dialog, sheet, select, calendar, form, input, textarea, alert-dialog, command, tooltip and sonner."},
+  "grids": {
+    "dashboard": "Mobile-first grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 or gap-6; summary widgets col-span-1, primary ageing chart col-span-2 row-span-2, assignment/follow-up feed col-span-1 row-span-2.",
+    "import_review": "grid-cols-1 xl:grid-cols-12 gap-6; file/source summary col-span-3, validation summary col-span-9, table col-span-full.",
+    "party_detail": "grid-cols-1 lg:grid-cols-12 gap-8; identity/contacts col-span-4, financial summary and invoice list col-span-8.",
+    "rule": "Grid children must be direct children. Leave no accidental nested animation wrappers. Use align-items-start and generous p-6/p-8 on bordered containers."
+  },
+  "layouts": {
+    "shell": "Desktop: fixed left rail 248px plus content; mobile: top bar plus Sheet navigation. Main content has pt for sticky header and px-4 md:px-8 lg:px-12.",
+    "owner_dashboard": "Asymmetric top band: title/date/import action left; outstanding North Star metric top-left; ageing buckets, expected collections and risk tables below.",
+    "head_dashboard": "Task-control layout with Due Today, Follow-ups Due and Broken Promises above an assignment queue; officer workload visible before detail.",
+    "field_dashboard": "Mobile-first action list ordered by configurable priority score; sticky quick action footer for Call, Visit, Payment, Follow-up and Cheque upload.",
+    "invoice_detail": "Header keeps Party, Serial No., Lot No., dispatch date, due date and status visible. Financial strip shows Amount, Taxable Amount, Net Amount and Outstanding. Tabs: Dispatch Source, Lines, Timeline, Payments, Audit.",
+    "import_flow": "Step indicator: Upload -> Parse -> Review new/updated/duplicate/problematic -> Commit. Never silently overwrite history; updates require explicit review and audit note.",
+    "footer": "Dark contrasting footer surface with generous py-20, product name and support/security links."
+  },
+  "domain_ui_rules": {
+    "terminology": "Use dispatch/invoice interchangeably only when clarifying that dispatch is the invoice; never create a separate invoice-entry concept.",
+    "identifiers": "Always show and search both Serial No. and Lot No.; Lot No. is unique, Serial No./Lot No. combination is duplicate protection.",
+    "dates": "Display DD-MM-YYYY; store ISO dates. Due date = dispatch/invoice date + 60 days.",
+    "money": "Format INR with Intl.NumberFormat('en-IN', {style:'currency', currency:'INR'}); Net Amount is contractual receivable and powers Outstanding = Net Amount - allocated payments.",
+    "statuses": ["Upcoming", "Due Today", "Overdue", "Partially Paid", "Paid/Closed", "Follow-up Due", "Broken Promise"],
+    "import_fields": ["Party", "Master", "Sr. No.", "Inw.Date", "Taka", "Chln No", "F.Pcs", "Lot No", "Gry.Mtrs", "Item Name", "Style", "Meters", "Rate", "Amount", "Taxable Amt", "Net Amt", "Ext.Rat", "Date", "SGST/other tax fields", "source file reference", "import timestamp"],
+    "parser_notes": ["Uploaded report is titled Masterwise Partywise Despatch Register for reporting period 18/08/2026 to 18/08/2026.", "Rows are grouped by Master and Party; party names can wrap across cells and must be normalized without losing original text.", "Detail rows may have blank Serial and Date cells while group totals repeat calculated values; do not import subtotal rows as receivables.", "Chln No values may contain suffixes such as /M, /B, /A, /MF and Lot No may be alphanumeric such as 54/RF; preserve strings exactly.", "Item Name/Style/Meters/Rate appear in a separate right-side report region and must be associated by source row when reliable.", "Validate missing party, date, Serial No., Lot No. and Net Amt. Flag malformed dates and numeric values for review."]
+  },
+  "motion": {"principles": ["Use 160-220ms transitions for color, opacity and box-shadow; never transition-all.", "Stagger table/list entrance by 30-50ms, subtle only.", "Buttons have hover color, slight translate-y and press scale; inputs have high-contrast focus ring.", "Import validation rows animate from parsing to result states.", "Respect prefers-reduced-motion: reduce; disable parallax and entrance movement while retaining instant state changes."], "loading": "Use skeleton rows for tables and a determinate import progress indicator."},
+  "accessibility": {"requirements": ["Every interactive and key informational element must include stable kebab-case data-testid, e.g. dispatch-import-upload-button, receivables-search-input, invoice-outstanding-amount, payment-submit-button.", "Use semantic table headers, captions or aria-labels, keyboard reachable dialogs and visible focus rings.", "Do not communicate status by color alone; include badge text and icon/label.", "File upload errors, duplicate warnings, payment confirmation and audit changes must be announced through accessible alert/status regions.", "Minimum touch target 44px on field officer mobile actions.", "Never place small text directly over images or low-contrast textures."]},
+  "media": {"image_needed": false, "image_urls": [], "reason": "This is a data-heavy operations app; use CSS texture and the uploaded dispatch report as source evidence rather than decorative stock imagery."},
+  "3d_libraries": {"use": false, "reason": "3D would reduce scanability and add no value to receivables and collection workflows. Use Recharts/shadcn chart components for ageing and performance data."},
+  "instructions_to_main_agent": ["Implement the design in React .js/.jsx and Tailwind; do not introduce .tsx guidance.", "Preserve all source dispatch fields and import lineage; show a review table before commit.", "Use Shadcn primitives for forms, selects, calendars, dialogs, tables and confirmation flows; use Sonner for toasts.", "Keep history immutable via append-only activities/audit entries and soft deletion; visually distinguish verified versus pending payments.", "All buttons, links, inputs, menus, status summaries and confirmation text require data-testid.", "Seed/demo users must be visually marked Demo and password-change-required; separate demo data from production data.", "Do not send automatic aggressive collection messages; notifications are reminders requiring human approval.", "Provide empty, error, loading, permission-denied and stale-import states.", "Do not use generic centered layouts, full-screen gradients, transparent overlays, or a universal transition rule.", "GENERAL UI UX DESIGN GUIDELINES: use 2-3x generous spacing; left-align reading flows; reserve primary color for actions; maintain clear hierarchy; show source and last-updated metadata; use concise labels; provide undo/confirmation for destructive actions; optimize desktop tables and mobile field workflows separately; test keyboard navigation and reduced motion."]
+}

@@ -1,0 +1,42 @@
+{
+  "summary": "Fresh post-pivot regression on Sripati Collection Desk (outstanding snapshots). Backend: 21/21 pytest cases green covering auth+cookie flags, Excel upload/commit, snapshot activation, party & master views, assignment scoping, all 3 follow-up outcomes with promise-broken detection, cheque upload+authed-serve, dashboard metrics, reports RBAC. Frontend: Playwright end-to-end covers Owner login → dashboard → Outstanding party & master views → PartyDrawer → CollectionModal for paid_full / paid_partial / not_paid(Other) → timeline appears → Snapshots / Follow-ups / Reports / Upload nav → snapshot upload preview → logout → Field Officer login shows only 3 assigned rows and hides Upload+Reports nav. Uncovered a runtime crash when toggling Party↔Master view (root cause: rows state holds stale party-shape docs while render switches to master shape, so g.parties.slice throws). Applied a minimal defensive guard so the page no longer white-screens, but the underlying race + duplicate-key warning still needs a proper fix by main agent.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Outstanding.jsx (view toggle)", "issue": "Switching between Party-wise and Master-wise triggers TypeError 'Cannot read properties of undefined (reading slice)' because setView re-renders synchronously while rows still holds the previous view's shape; only my defensive `(g.parties || []).slice` prevents the crash. Also emits ~100 'duplicate key' warnings during the transition (party-shape items share master values used as keys).", "selector": "[data-testid=view-master] / [data-testid=view-party]", "priority": "HIGH"},
+      {"component": "Outstanding.jsx (master card key)", "issue": "`key={g.master}` on master cards. If two masters ever share the same string (or during the transition described above) React collides keys. Prefer a stable master id.", "selector": "[data-testid^=master-card-]", "priority": "MEDIUM"},
+      {"component": "CollectionModal.jsx", "issue": "modal-close (X icon) is the only close button; review request expected data-testid `modal-cancel` and it is present, but there is no explicit label on the X. Minor.", "selector": "[data-testid=modal-close]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login", "issues": ["Demo password 'Sripati@123' is prefilled in a live input — fine for demo but flag before prod."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sripati_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix Outstanding.jsx view-toggle race: reset `rows` synchronously when `view` changes (e.g. `onClick={() => { setRows([]); setView('master'); }}`) OR gate the render on a matching data shape, so master render never sees party-shape docs. This also silences the duplicate-key warning storm.",
+    "Consider using a stable master identifier instead of `key={g.master}` for master cards.",
+    "Optional: add a small loading skeleton in the master grid while the fetch is in flight."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 649 lines — still within threshold but growing; consider splitting parser, routes, and models.",
+    "cheque image endpoint requires cookie auth — good, but note `withCredentials` must be true on any manual <img src> requests; the current React app uses an <a> link with `target=_blank`, which will 401 the user in a new tab because cookies are SameSite=None; the linked page shows 401. Consider prefetching + object URL for cheque previews.",
+    "Frontend Outstanding.jsx: the async fetch on view/search change has no request-race protection. Rapid toggles could interleave responses.",
+    "CommitInput.parties is `List[dict]` — any client can send arbitrary field names into snapshot_parties. Consider a stricter Pydantic model or a whitelist.",
+    "Login endpoint has no rate-limiting or brute-force lockout; the playbook check for 5-fail lockout is not implemented."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sripati_api.py (rewritten for new endpoints)",
+    "/app/frontend/src/pages/Outstanding.jsx (added `setRows([])` on refetch + defensive `(g.parties || []).slice` guard)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "94% (16/17 flows, master↔party toggle needed defensive patch)"},
+  "test_credentials": "owner@sripati.local / Sripati@123 (and head@, field1-3@); loaded from /app/memory/test_credentials.md",
+  "seed_data_creation": "Backend tests upload /tmp/outstanding.xlsx and commit as an active snapshot (114 parties, ₹2.33 Cr). Assigned 3 top parties to field1@sripati.local. Frontend tests add 4 follow-ups (paid_full, paid_partial, not_paid, plus one earlier). No cleanup because snapshots are historical by design.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "A snapshot is already committed and field1 has 3 assigned parties from this run. Re-uploading /tmp/outstanding.xlsx will create a new active snapshot and deactivate the current one — assignments do NOT carry across snapshots by design. If the main agent fixes the view-toggle race, rerun the Playwright block that clicks view-master immediately after view-party to confirm no runtime error and no duplicate-key warnings.",
+  "rca of the issue": "Outstanding.jsx uses a single `rows` state for both list-of-parties (party view) and list-of-master-groups (master view). Switching `view` re-renders synchronously with the new view but stale `rows`; the master grid iterates `g.parties.slice(0,6)` where `g` is actually a party object without a `parties` field, throwing. Reproduction: log in as owner → Outstanding → click Master-wise. Mitigation applied: (1) `setRows([])` inside the fetch effect, (2) `(g.parties || []).slice(0, 6)`. Proper fix: reset rows in the click handler (or track view-of-loaded-data separately)."
+}
