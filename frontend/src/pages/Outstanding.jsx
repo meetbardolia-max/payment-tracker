@@ -226,7 +226,7 @@ export default function Outstanding({ user }) {
                 </div>
               </div>
               <div className="master-bills">
-                {(g.parties || []).slice(0, 6).map((p) => (
+                {(g.parties || []).map((p) => (
                   <button
                     key={p.id}
                     data-testid={`master-party-${p.id}`}
@@ -240,9 +240,6 @@ export default function Outstanding({ user }) {
                     <span className="num">{money(p.total_outstanding)}</span>
                   </button>
                 ))}
-                {(g.parties || []).length > 6 && (
-                  <small className="muted">+{g.parties.length - 6} more parties</small>
-                )}
               </div>
             </section>
           ))}

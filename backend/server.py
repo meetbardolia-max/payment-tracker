@@ -180,14 +180,19 @@ def parse_outstanding(file_bytes: bytes, filename: str):
     group = None
     party_meta = None
     bills: list = []
+    party_tot: dict = {}
     report_period = ""
 
     def flush():
-        nonlocal party_meta, bills
+        nonlocal party_meta, bills, party_tot
         if party_meta and bills:
-            total_os = sum(b["bill_os"] for b in bills)
-            total_bill = sum(b["bill_amt"] for b in bills)
-            total_rcvd = sum(b["rcvd_amt"] for b in bills)
+            # Prefer authoritative Pty Tot values from the report itself; fall back to summing bills.
+            authoritative = bool(party_tot)
+            total_bill = party_tot.get("bill_amt") if authoritative else sum(b["bill_amt"] for b in bills)
+            total_rcvd = party_tot.get("rcvd_amt") if authoritative else sum(b["rcvd_amt"] for b in bills)
+            total_os = party_tot.get("bill_os") if authoritative else sum(b["bill_os"] for b in bills)
+            total_taka = party_tot.get("taka") if authoritative else sum(b["taka"] for b in bills)
+            total_mtrs = party_tot.get("mtrs") if authoritative else sum(b["mtrs"] for b in bills)
             parties.append({
                 "id": secrets.token_hex(8),
                 "master": master or "—",
@@ -197,13 +202,17 @@ def parse_outstanding(file_bytes: bytes, filename: str):
                 "mobile": party_meta.get("mobile"),
                 "address": party_meta.get("address"),
                 "bills": list(bills),
-                "total_outstanding": round(total_os, 2),
-                "total_bill_amt": round(total_bill, 2),
-                "total_received": round(total_rcvd, 2),
+                "total_outstanding": round(total_os or 0, 2),
+                "total_bill_amt": round(total_bill or 0, 2),
+                "total_received": round(total_rcvd or 0, 2),
+                "total_taka": round(total_taka or 0, 2),
+                "total_mtrs": round(total_mtrs or 0, 2),
                 "bill_count": len(bills),
+                "authoritative": authoritative,
             })
         party_meta = None
         bills = []
+        party_tot = {}
 
     for r in range(1, ws.max_row + 1):
         a = _s(ws.cell(r, 1).value)
@@ -235,6 +244,18 @@ def parse_outstanding(file_bytes: bytes, filename: str):
                 party_meta["address"] = a[len("Address:"):].strip()
             continue
 
+        # Authoritative party total row from the report itself
+        if b == "Pty Tot:" and party_meta is not None:
+            party_tot = {
+                "taka": _num(ws.cell(r, 8).value),
+                "mtrs": _num(ws.cell(r, 9).value),
+                "amount": _num(ws.cell(r, 11).value),
+                "bill_amt": _num(ws.cell(r, 12).value),
+                "rcvd_amt": _num(ws.cell(r, 20).value),
+                "bill_os": _num(ws.cell(r, 21).value),
+            }
+            continue
+
         # detail bill row: col B has DD/MM/YYYY
         if re.match(r"^\d{2}/\d{2}/\d{4}$", b):
             try:
@@ -242,6 +263,12 @@ def parse_outstanding(file_bytes: bytes, filename: str):
             except Exception:
                 continue
             bucket = "1-15" if d.day <= 15 else "16-31"
+            bill_amt = _num(ws.cell(r, 12).value)
+            rcvd_amt = _num(ws.cell(r, 20).value)
+            raw_os = _num(ws.cell(r, 21).value)
+            # For display, clamp per-row outstanding to bill_amt - received so running-balance
+            # artifacts (negatives, or values > bill_amt) don't confuse users.
+            clean_os = max(0.0, min(raw_os, bill_amt - rcvd_amt)) if bill_amt else raw_os
             bills.append({
                 "date": d.isoformat(),
                 "display_date": b,
@@ -252,15 +279,16 @@ def parse_outstanding(file_bytes: bytes, filename: str):
                 "mtrs": _num(ws.cell(r, 9).value),
                 "rate": _num(ws.cell(r, 10).value),
                 "amount": _num(ws.cell(r, 11).value),
-                "bill_amt": _num(ws.cell(r, 12).value),
+                "bill_amt": bill_amt,
                 "tax_cgst": _num(ws.cell(r, 13).value),
                 "tax_sgst": _num(ws.cell(r, 14).value),
-                "rcvd_amt": _num(ws.cell(r, 20).value),
-                "bill_os": _num(ws.cell(r, 21).value),
+                "rcvd_amt": rcvd_amt,
+                "bill_os": clean_os,
+                "raw_bill_os": raw_os,
                 "remark": _s(ws.cell(r, 29).value),
             })
             continue
-        # ignore Mth Tot / Pty Tot / Grp Tot / Mst Tot rows
+        # ignore Mth Tot / Grp Tot / Mst Tot rows
     flush()
 
     return {
@@ -395,15 +423,22 @@ async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "part
                    or q in (p.get("master", "") or "").lower()
                    or q in (p.get("group", "") or "").lower()]
 
-    sorters = {
-        "outstanding_desc": lambda p: -(p.get("total_outstanding") or 0),
-        "outstanding_asc": lambda p: (p.get("total_outstanding") or 0),
-        "code_asc": lambda p: ((p.get("party_code") or "").upper() == "", (p.get("party_code") or "").upper()),
-        "code_desc": lambda p: ((p.get("party_code") or "").upper() == "", [-ord(c) for c in (p.get("party_code") or "").upper()]),
-        "name_asc": lambda p: (p.get("party_name") or "").upper(),
-        "name_desc": lambda p: [-ord(c) for c in (p.get("party_name") or "").upper()],
-    }
-    key_fn = sorters.get(sort, sorters["outstanding_desc"])
+    def code_str(p): return (p.get("party_code") or "").upper()
+    def name_str(p): return (p.get("party_name") or "").upper()
+
+    def sort_parties(items):
+        if sort == "outstanding_desc":
+            return sorted(items, key=lambda p: p.get("total_outstanding") or 0, reverse=True)
+        if sort == "outstanding_asc":
+            return sorted(items, key=lambda p: p.get("total_outstanding") or 0)
+        if sort in ("code_asc", "code_desc"):
+            with_code = [p for p in items if code_str(p)]
+            without = [p for p in items if not code_str(p)]
+            with_code.sort(key=code_str, reverse=(sort == "code_desc"))
+            return with_code + without
+        if sort in ("name_asc", "name_desc"):
+            return sorted(items, key=name_str, reverse=(sort == "name_desc"))
+        return sorted(items, key=lambda p: p.get("total_outstanding") or 0, reverse=True)
 
     if view == "master":
         groups: dict = {}
@@ -424,7 +459,7 @@ async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "part
             g["total_received"] += p["total_received"]
             g["party_count"] += 1
         for g in groups.values():
-            g["parties"].sort(key=key_fn)
+            g["parties"] = sort_parties(g["parties"])
             g["total_outstanding"] = round(g["total_outstanding"], 2)
             g["total_bill_amt"] = round(g["total_bill_amt"], 2)
             g["total_received"] = round(g["total_received"], 2)
@@ -433,7 +468,7 @@ async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "part
     out = []
     for p in parties:
         out.append({k: v for k, v in p.items() if k != "bills"})
-    return sorted(out, key=key_fn)
+    return sort_parties(out)
 
 
 @api_router.get("/parties/{party_id}")

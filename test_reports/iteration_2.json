@@ -1,0 +1,40 @@
+{
+  "summary": "Re-verified user-reported outstanding-parser bug (party totals mismatch) and master-view truncation. Backend: 39/39 pytest cases green — 9 new parser regression tests validate exact per-party totals from /tmp/outstanding.xlsx (J TEX INDIA ₹1,91,702 with authoritative=true; L.C. ENTERPRISE ₹14,06,857; C.B. CREATION ₹15,77,032; KAVYA ₹1,56,082; ROOPAM ₹2,63,082; grand total ₹2,32,59,467 across exactly 114 parties). Per-bill clamp confirmed: J TEX INDIA 15/07/2026 bill has raw_bill_os=-16,76,569 but returned bill_os=0. 7/8 sort+master API regression tests pass (name_desc has a minor ordering bug for shorter-vs-longer prefix names). Frontend: Owner login → Upload /tmp/outstanding.xlsx → Commit → Outstanding page shows 114 parties · ₹2.33 Cr; Master-wise view renders all 5 master cards with correct per-master party counts (BHUPENDRA 98, SAGAR 11, ANIL/RAHUL 1, SANDIP 1, BHANU 3 = 114); no '+N more parties' text present. Party-wise sort dropdown returns 114 rows for every option. J TEX INDIA visible in SAGAR card with correct ₹1,91,702.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/snapshots/{id}/parties?sort=name_desc", "issue": "Sorter uses [-ord(c) for c in name] which orders shorter strings before longer prefix-matching strings — 'SIA TEX' appears before 'SIA TEX FAB' when it should appear after in true Z→A order. Fix: use `key=lambda p: (p.get('party_name') or '').upper()` with `reverse=True` at the sorted() call, or invert via a wrapper; same latent issue for code_desc (empty-code sink is fine, but among non-empty codes of unequal length the same prefix bug can occur)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_parser_regression.py",
+    "/app/backend/tests/test_sort_and_master_api.py",
+    "/app/backend/tests/test_sripati_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix name_desc (and code_desc among non-empty codes) sorter in server.py:426 sorters dict — replace the negated-ord list trick with a proper reverse sort, e.g. maintain a helper that returns (empty_sink_bool, key_string) and applies reverse=True at sorted() time for the *_desc variants."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 689 lines — consider splitting into parser.py, routes/*.py, models.py before adding more features (was already flagged in iteration 1).",
+    "sorters dict uses [-ord(c) for c in string] as a poor-man's descending sort — this is provably wrong for strings of unequal length that share a prefix (as demonstrated by name_desc regression). Prefer `sorted(..., key=..., reverse=True)`.",
+    "parse_outstanding()'s clamp `max(0.0, min(raw_os, bill_amt - rcvd_amt))` silently discards data when bill_amt < rcvd_amt; the raw_bill_os is preserved so audit is fine, but consider logging when clamp fires so future workbook anomalies are visible.",
+    "authoritative=false path exists but is never exercised in the sample workbook (all 114 parties have Pty Tot rows). Add a synthetic test workbook without Pty Tot rows to keep the fallback covered."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_parser_regression.py (new — 9 tests)",
+    "/app/backend/tests/test_sort_and_master_api.py (new — 8 tests, 1 documents name_desc bug)"
+  ],
+  "success_rate": {"backend": "97% (38/39, 1 documents an existing minor sort bug)", "frontend": "100% (all target flows verified visually + programmatically)"},
+  "test_credentials": "owner@sripati.local / Sripati@123 (loaded from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Owner uploaded and committed /tmp/outstanding.xlsx via UI; a fresh active snapshot exists (114 parties, ₹2.33 Cr, period_label='Test Snapshot' or as-committed). Field officer assignments from iteration 1 are gone because a new snapshot was created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both user-reported bugs are FIXED and verified end-to-end (parser totals authoritative from Pty Tot rows, master card renders all parties). Only remaining action item is the minor name_desc sort bug — fully documented in test_sort_and_master_api.py::test_name_asc_and_desc. Iteration 1's view-toggle race also appears resolved (loadedView state added to Outstanding.jsx and setRows([]) on refetch).",
+  "rca of the issue": "Reported bug A (party total mismatch, e.g. J TEX INDIA): OLD parser summed per-row bill_os (col 21), but some rows contain running-balance artifacts (J TEX INDIA has a bill_os of -16,76,569 on 15/07/2026 that only makes sense as a running balance). FIX in parse_outstanding(): read the report's own `Pty Tot:` row (cols 12/20/21) into party_tot dict and use it as authoritative totals in flush(); per-bill bill_os is clamped to `max(0, min(raw, bill_amt - rcvd_amt))` for display and raw_bill_os is kept for audit. Reported bug B (master card truncation): OLD Outstanding.jsx sliced g.parties.slice(0, 6) with a `+N more parties` footer; FIX renders every party inside `.master-bills` with max-height:520px scrollable — confirmed BHUPENDRA card renders 98/98 parties and no truncation text remains anywhere."
+}

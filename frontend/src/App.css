@@ -284,7 +284,7 @@ td.num { font-family: var(--mono); text-align: right; }
 }
 .master-amount b { display: block; font-family: var(--mono); font-size: 18px; }
 .master-amount small { color: var(--muted); font-size: 11px; }
-.master-bills { display: grid; gap: 2px; }
+.master-bills { display: grid; gap: 2px; max-height: 520px; overflow-y: auto; }
 .master-party {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 4px; border: 0; background: transparent; text-align: left;
