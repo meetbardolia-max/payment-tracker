@@ -382,7 +382,8 @@ async def active_snapshot(user=Depends(current_user)):
 
 
 @api_router.get("/snapshots/{snapshot_id}/parties")
-async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "party", user=Depends(current_user)):
+async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "party",
+                           sort: str = "outstanding_desc", user=Depends(current_user)):
     parties = await db.snapshot_parties.find({"snapshot_id": snapshot_id}, {"_id": 0}).to_list(3000)
     if user["role"] == "field_officer":
         parties = [p for p in parties if p.get("assigned_officer_id") == user["id"]]
@@ -393,6 +394,17 @@ async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "part
                    or q in (p.get("party_code", "") or "").lower()
                    or q in (p.get("master", "") or "").lower()
                    or q in (p.get("group", "") or "").lower()]
+
+    sorters = {
+        "outstanding_desc": lambda p: -(p.get("total_outstanding") or 0),
+        "outstanding_asc": lambda p: (p.get("total_outstanding") or 0),
+        "code_asc": lambda p: ((p.get("party_code") or "").upper() == "", (p.get("party_code") or "").upper()),
+        "code_desc": lambda p: ((p.get("party_code") or "").upper() == "", [-ord(c) for c in (p.get("party_code") or "").upper()]),
+        "name_asc": lambda p: (p.get("party_name") or "").upper(),
+        "name_desc": lambda p: [-ord(c) for c in (p.get("party_name") or "").upper()],
+    }
+    key_fn = sorters.get(sort, sorters["outstanding_desc"])
+
     if view == "master":
         groups: dict = {}
         for p in parties:
@@ -412,16 +424,16 @@ async def snapshot_parties(snapshot_id: str, search: str = "", view: str = "part
             g["total_received"] += p["total_received"]
             g["party_count"] += 1
         for g in groups.values():
-            g["parties"].sort(key=lambda x: x["total_outstanding"], reverse=True)
+            g["parties"].sort(key=key_fn)
             g["total_outstanding"] = round(g["total_outstanding"], 2)
             g["total_bill_amt"] = round(g["total_bill_amt"], 2)
             g["total_received"] = round(g["total_received"], 2)
-        return sorted(groups.values(), key=lambda x: x["total_outstanding"], reverse=True)
+        return sorted(groups.values(), key=lambda x: -x["total_outstanding"])
 
     out = []
     for p in parties:
         out.append({k: v for k, v in p.items() if k != "bills"})
-    return sorted(out, key=lambda x: x["total_outstanding"], reverse=True)
+    return sorted(out, key=key_fn)
 
 
 @api_router.get("/parties/{party_id}")

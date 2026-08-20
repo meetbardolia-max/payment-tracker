@@ -15,6 +15,7 @@ export default function Outstanding({ user }) {
   const [snapshot, setSnapshot] = useState(null);
   const [view, setView] = useState("party"); // party | master
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("outstanding_desc");
   const [rows, setRows] = useState([]);
   const [loadedView, setLoadedView] = useState("party");
   const [loading, setLoading] = useState(true);
@@ -36,7 +37,7 @@ export default function Outstanding({ user }) {
     setRows([]);
     const requestedView = view;
     client
-      .get(`/snapshots/${snapshot.id}/parties`, { params: { search, view: requestedView } })
+      .get(`/snapshots/${snapshot.id}/parties`, { params: { search, view: requestedView, sort } })
       .then((r) => {
         if (cancelled) return;
         setRows(r.data);
@@ -45,7 +46,7 @@ export default function Outstanding({ user }) {
       .catch(() => { if (!cancelled) toast.error("Could not load outstanding list"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [snapshot, search, view]);
+  }, [snapshot, search, view, sort]);
 
   const totals = useMemo(() => {
     if (loadedView === "master") {
@@ -64,9 +65,8 @@ export default function Outstanding({ user }) {
     setSelection((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const refresh = () => {
-    setRows([...rows]);
     if (snapshot) {
-      client.get(`/snapshots/${snapshot.id}/parties`, { params: { search, view } })
+      client.get(`/snapshots/${snapshot.id}/parties`, { params: { search, view, sort } })
         .then((r) => setRows(r.data));
     }
   };
@@ -123,6 +123,19 @@ export default function Outstanding({ user }) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <select
+          data-testid="outstanding-sort-select"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          title="Sort parties"
+        >
+          <option value="outstanding_desc">Outstanding · high → low</option>
+          <option value="outstanding_asc">Outstanding · low → high</option>
+          <option value="code_asc">Party code · A → Z</option>
+          <option value="code_desc">Party code · Z → A</option>
+          <option value="name_asc">Party name · A → Z</option>
+          <option value="name_desc">Party name · Z → A</option>
+        </select>
         {view === "party" && canAssign && (
           <AssignmentBar
             selection={selection}
