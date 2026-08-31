@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronRight, BookOpen } from "lucide-react";
-import { client } from "@/lib/api";
+import { client, setStoredToken } from "@/lib/api";
 
 const demos = [
   ["owner@sripati.local", "Owner"],
@@ -19,10 +19,13 @@ export default function Login({ onLogin }) {
     setBusy(true);
     setError("");
     try {
+      // Clear any stale token before attempting a fresh sign-in.
+      setStoredToken(null);
       const r = await client.post("/auth/login", { email, password });
+      if (r.data?.access_token) setStoredToken(r.data.access_token);
       onLogin(r.data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Unable to sign in");
+      setError(err.response?.data?.detail || err.message || "Unable to sign in");
     }
     setBusy(false);
   };

@@ -6,7 +6,7 @@ import {
   LogOut, Menu, Users, X, ListChecks, History, ShieldCheck,
 } from "lucide-react";
 import { Toaster } from "sonner";
-import { client, ROLE_LABEL, initials } from "@/lib/api";
+import { client, ROLE_LABEL, initials, setStoredToken } from "@/lib/api";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Outstanding from "@/pages/Outstanding";
@@ -38,6 +38,7 @@ function Shell({ user, setUser }) {
 
   const logout = async () => {
     try { await client.post("/auth/logout"); } catch { /* empty */ }
+    setStoredToken(null);
     setUser(null);
     nav("/");
   };

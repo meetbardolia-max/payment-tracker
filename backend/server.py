@@ -7,6 +7,8 @@ load_dotenv(ROOT_DIR / ".env")
 import os
 import re
 import secrets
+import uuid
+import logging
 from io import BytesIO
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, List
@@ -14,14 +16,73 @@ from typing import Optional, List
 import bcrypt
 import jwt
 import openpyxl
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
+import requests
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import Response as FastResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
-UPLOAD_DIR = Path("/app/uploads/cheques")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+logger = logging.getLogger("sripati")
+logging.basicConfig(level=logging.INFO)
+
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "sripati-collection-desk"
+_storage_key: Optional[str] = None
+
+
+def init_storage(force: bool = False) -> Optional[str]:
+    global _storage_key
+    if _storage_key and not force:
+        return _storage_key
+    if not EMERGENT_KEY:
+        logger.warning("EMERGENT_LLM_KEY missing; object storage disabled")
+        return None
+    try:
+        r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        r.raise_for_status()
+        _storage_key = r.json()["storage_key"]
+        return _storage_key
+    except Exception as e:
+        logger.error(f"Object storage init failed: {e}")
+        _storage_key = None
+        return None
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(503, "Cheque storage is not available right now")
+    r = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120,
+    )
+    if r.status_code == 404:
+        # possible dead session key
+        key = init_storage(force=True)
+        r = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data, timeout=120,
+        )
+    r.raise_for_status()
+    return r.json()
+
+
+def get_object(path: str) -> tuple[bytes, str]:
+    key = init_storage()
+    if not key:
+        raise HTTPException(503, "Cheque storage is not available right now")
+    r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    if r.status_code == 404:
+        key = init_storage(force=True)
+        r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    r.raise_for_status()
+    return r.content, r.headers.get("Content-Type", "application/octet-stream")
+
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -315,16 +376,17 @@ async def login(data: LoginInput, response: Response):
     if not u or not verify_password(data.password, u["password_hash"]):
         raise HTTPException(401, "Incorrect email or password")
     u = clean(u)
-    response.set_cookie("access_token", make_token(u), httponly=True, secure=True, samesite="none",
+    access = make_token(u)
+    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none",
                         max_age=28800, path="/")
     await db.audit_logs.insert_one({"id": secrets.token_hex(8), "action": "login",
                                     "user_id": u["id"], "user_name": u["name"], "created_at": now()})
-    return u
+    return {**u, "access_token": access}
 
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("access_token", path="/", secure=True, samesite="none")
     return {"ok": True}
 
 
@@ -518,21 +580,36 @@ async def upload_cheque(file: UploadFile = File(...), user=Depends(current_user)
     ext = os.path.splitext(file.filename)[1].lower() or ".jpg"
     if ext not in (".jpg", ".jpeg", ".png", ".webp"):
         ext = ".jpg"
-    fname = f"{secrets.token_hex(8)}{ext}"
-    path = UPLOAD_DIR / fname
     content = await file.read()
     if len(content) > 6 * 1024 * 1024:
         raise HTTPException(400, "Image too large (max 6MB)")
-    path.write_bytes(content)
-    return {"url": f"/api/uploads/cheques/{fname}", "filename": fname}
+    fname = f"{uuid.uuid4().hex}{ext}"
+    storage_path = f"{APP_NAME}/cheques/{user['id']}/{fname}"
+    put_object(storage_path, content, file.content_type)
+    await db.cheque_files.insert_one({
+        "id": secrets.token_hex(10),
+        "storage_path": storage_path,
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(content),
+        "uploaded_by": user["id"],
+        "uploaded_by_name": user["name"],
+        "is_deleted": False,
+        "created_at": now().isoformat(),
+    })
+    return {"url": f"/api/uploads/cheques/{fname}", "filename": fname, "storage_path": storage_path}
 
 
 @api_router.get("/uploads/cheques/{filename}")
 async def serve_cheque(filename: str, user=Depends(current_user)):
-    path = UPLOAD_DIR / filename
-    if not path.exists():
-        raise HTTPException(404, "Not found")
-    return FileResponse(str(path))
+    record = await db.cheque_files.find_one(
+        {"storage_path": {"$regex": f"/{re.escape(filename)}$"}, "is_deleted": False},
+        {"_id": 0},
+    )
+    if not record:
+        raise HTTPException(404, "Cheque image not found")
+    data, ctype = get_object(record["storage_path"])
+    return FastResponse(content=data, media_type=record.get("content_type") or ctype)
 
 
 @api_router.get("/follow-ups")

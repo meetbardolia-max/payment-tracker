@@ -3,6 +3,29 @@ import axios from "axios";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export const client = axios.create({ baseURL: API, withCredentials: true });
+
+// Bearer-token fallback for browsers that block third-party or partitioned cookies.
+export const TOKEN_KEY = "sripati_access_token";
+export const setStoredToken = (t) => {
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
+};
+export const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
+
+client.interceptors.request.use((cfg) => {
+  const t = getStoredToken();
+  if (t) cfg.headers.Authorization = `Bearer ${t}`;
+  return cfg;
+});
+client.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    if (err.response?.status === 401 && !err.config?.url?.includes("/auth/login")) {
+      setStoredToken(null);
+    }
+    return Promise.reject(err);
+  },
+);
 export const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 export const money = (n) => inr.format(Number(n) || 0);
 export const shortMoney = (n) => {
